@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>لوحة المناسبات</title>
+<link href="https://fonts.googleapis.com/css2?family=Aref+Ruqaa:wght@400;700&family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css"/>
+</head>
+<body>
+<div id="app"><div class="loader">جارِ التحميل…</div></div>
+<div id="toast" class="toast"></div>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script>
+(function(){
+"use strict";
+var app=document.getElementById("app");
+
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];});}
+function toast(m){var t=document.getElementById("toast");t.textContent=m;t.classList.add("show");
+  clearTimeout(toast._h);toast._h=setTimeout(function(){t.classList.remove("show");},2200);}
+function copyText(x){
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(x).then(function(){toast("تم نسخ الرابط ✓");}).catch(function(){fb(x);});
+  } else fb(x);
+  function fb(t){var ta=document.createElement("textarea");ta.value=t;document.body.appendChild(ta);ta.select();
+    try{document.execCommand("copy");toast("تم نسخ الرابط ✓");}catch(e){toast("انسخ الرابط يدويًا");}
+    document.body.removeChild(ta);}
+}
+function waPhone(p){var x=(p||"").replace(/[^\d+]/g,"");
+  if(x.charAt(0)==="+")x=x.slice(1);else if(x.slice(0,2)==="00")x=x.slice(2);
+  else if(x.charAt(0)==="0")x="966"+x.slice(1);else if(x.length===9)x="966"+x;return x;}
+function fmt(ts){if(!ts)return"";return new Date(ts).toLocaleString("ar-SA",
+  {hour:"2-digit",minute:"2-digit",day:"2-digit",month:"2-digit"});}
+function origin(){return window.location.origin;}
+function inviteUrl(tok){return origin()+"/i/"+tok;}
+function scanUrl(key){return origin()+"/s/"+key;}
+function badge(g){
+  if(g.status==="entered")return '<span class="badge b-in">✓ دخل الحفل</span>';
+  if(g.rsvp==="yes")return '<span class="badge b-yes">موافق على الحضور</span>';
+  if(g.rsvp==="no")return '<span class="badge b-no">غير موافق</span>';
+  return '<span class="badge b-pending">لم يرد بعد</span>';
+}
+async function api(url,opts){
+  var r=await fetch(url,Object.assign({headers:{"Content-Type":"application/json"}},opts||{}));
+  if(r.status===401){gate();throw new Error("unauth");}
+  var d=await r.json().catch(function(){return{};});
+  if(!r.ok)throw new Error(d.error||"خطأ في الاتصال");
+  return d;
+}
+
+/* ---------- boot ---------- */
+api("/api/me").then(function(d){ d.authenticated?renderEvents():gate(); }).catch(gate);
+
+function gate(){
+  app.innerHTML='<div class="stage"><div class="gate-card">'+
+    '<div class="ornament">۰ ۰ ۰</div><h1>لوحة المناسبات</h1>'+
+    '<div class="gate-sub">أدخل الرمز السري للمتابعة</div>'+
+    '<form id="pf" autocomplete="off"><input id="pi" class="pin-input" type="password" inputmode="numeric" maxlength="6" placeholder="••••••"/>'+
+    '<div class="gate-error" id="pe"></div>'+
+    '<button type="submit" class="btn btn-gold btn-block" style="margin-top:12px;">دخول</button></form></div></div>';
+  var i=document.getElementById("pi");i.focus();
+  document.getElementById("pf").addEventListener("submit",async function(e){
+    e.preventDefault();
+    try{ await api("/api/login",{method:"POST",body:JSON.stringify({pin:i.value})}); renderEvents(); }
+    catch(err){ document.getElementById("pe").textContent="الرمز غير صحيح"; i.value=""; i.focus(); }
+  });
+}
+
+function shell(title,actions){
+  app.innerHTML='<div class="workspace"><div class="topbar">'+
+    '<div class="brand"><span class="mark">۞</span><h1>'+esc(title)+'</h1></div>'+
+    '<div class="topbar-actions">'+actions+'</div></div><div class="container" id="body"></div></div>';
+}
+
+/* ---------- events ---------- */
+async function renderEvents(){
+  shell("لوحة المناسبات",'<button class="btn btn-outline btn-sm" id="lock">🔒 خروج</button>');
+  document.getElementById("lock").addEventListener("click",async function(){
+    await api("/api/logout",{method:"POST"});gate();});
+  var body=document.getElementById("body");
+  body.innerHTML=
+    '<div class="panel"><h2>إضافة مناسبة جديدة</h2>'+
+    '<div class="panel-sub">أنشئ حفلًا وسمِّه، ثم أضف مدعوينه وباركوداتهم</div>'+
+    '<div class="grid2">'+
+    '<div class="field"><label>اسم الحفل</label><input id="eName" placeholder="حفل زواج عبدالرحمن نسيم"/></div>'+
+    '<div class="field"><label>التاريخ والوقت</label><input id="eDate" placeholder="الخميس ٢٠ ذو الحجة، ٩:٠٠ مساءً"/></div>'+
+    '<div class="field"><label>مكان الحفل</label><input id="eLoc" placeholder="قاعة اللؤلؤة، جدة"/></div>'+
+    '<div class="field"><label>رابط الموقع على الخرائط (اختياري)</label><input id="eMap" placeholder="https://maps.app.goo.gl/..."/></div>'+
+    '</div><button class="btn btn-gold" id="addEvent">إنشاء المناسبة</button></div>'+
+    '<div class="panel"><h2>المناسبات</h2><div class="panel-sub">اضغط على المناسبة لإدارة مدعويها</div>'+
+    '<div id="evList"><div class="empty-state">جارِ التحميل…</div></div></div>';
+
+  document.getElementById("addEvent").addEventListener("click",async function(){
+    var n=document.getElementById("eName").value.trim();
+    if(!n){toast("اكتب اسم الحفل");return;}
+    try{
+      await api("/api/events",{method:"POST",body:JSON.stringify({
+        name:n,dateText:document.getElementById("eDate").value.trim(),
+        location:document.getElementById("eLoc").value.trim(),
+        map:document.getElementById("eMap").value.trim()})});
+      toast("تم إنشاء المناسبة ✓");
+      renderEvents();
+    }catch(e){toast(e.message);}
+  });
+
+  var events=await api("/api/events");
+  var wrap=document.getElementById("evList");
+  if(!events.length){wrap.innerHTML='<div class="empty-state">لا توجد مناسبات بعد — أنشئ أول حفل من الأعلى</div>';return;}
+  wrap.innerHTML=events.map(function(ev){
+    return '<div class="event-card"><div><h3>'+esc(ev.name)+'</h3>'+
+      '<div class="event-meta">'+esc(ev.date_text||"—")+(ev.location?" · "+esc(ev.location):"")+
+      ' · '+ev.total+' مدعو · '+ev.entered+' دخلوا</div></div>'+
+      '<div class="event-actions">'+
+      '<button class="btn btn-gold btn-sm" data-open="'+ev.id+'">إدارة المدعوين</button>'+
+      '<button class="btn btn-ghost btn-sm" data-scan="'+esc(ev.scan_key)+'">رابط الاستقبال</button>'+
+      '<button class="btn btn-ghost btn-sm" data-del="'+ev.id+'">حذف</button></div></div>';
+  }).join("");
+  wrap.querySelectorAll("[data-open]").forEach(function(b){
+    b.addEventListener("click",function(){renderEvent(b.dataset.open);});});
+  wrap.querySelectorAll("[data-scan]").forEach(function(b){
+    b.addEventListener("click",function(){copyText(scanUrl(b.dataset.scan));});});
+  wrap.querySelectorAll("[data-del]").forEach(function(b){
+    b.addEventListener("click",async function(){
+      if(!confirm("حذف هذه المناسبة وكل مدعويها؟"))return;
+      await api("/api/events/"+b.dataset.del,{method:"DELETE"});renderEvents();});});
+}
+
+/* ---------- single event ---------- */
+async function renderEvent(id){
+  var data=await api("/api/events/"+id);
+  shell(data.event.name,
+    '<button class="btn btn-outline btn-sm" id="scanLink">🔗 رابط شاشة الاستقبال</button>'+
+    '<button class="btn btn-outline btn-sm" id="back">↩ المناسبات</button>');
+  document.getElementById("back").addEventListener("click",renderEvents);
+  document.getElementById("scanLink").addEventListener("click",function(){copyText(scanUrl(data.event.scan_key));});
+  paint(id);
+}
+
+async function paint(id){
+  var data=await api("/api/events/"+id);
+  var ev=data.event, guests=data.guests;
+  var img=data.event.has_image ? (await api("/api/events/"+id+"/image")).image : "";
+  var yes=guests.filter(function(g){return g.rsvp==="yes";}).length;
+  var no=guests.filter(function(g){return g.rsvp==="no";}).length;
+  var inn=guests.filter(function(g){return g.status==="entered";}).length;
+  var body=document.getElementById("body");
+
+  body.innerHTML=
+    '<div class="stats-row">'+
+    '<div class="stat"><span class="num">'+guests.length+'</span><span class="lbl">إجمالي المدعوين</span></div>'+
+    '<div class="stat"><span class="num">'+yes+'</span><span class="lbl">موافق على الحضور</span></div>'+
+    '<div class="stat"><span class="num">'+no+'</span><span class="lbl">غير موافق</span></div>'+
+    '<div class="stat"><span class="num">'+inn+'</span><span class="lbl">دخل الحفل</span></div></div>'+
+
+    '<div class="panel"><h2>إضافة المدعوين</h2>'+
+    '<div class="panel-sub">اكتب كل مدعو في سطر: الرقم ثم الاسم<br/>مثال:<br/>503667823 عبدالرحمن نسيم<br/>0545276049 جهاد فيصل</div>'+
+    '<div class="field"><textarea id="bulk" placeholder="503667823 عبدالرحمن نسيم&#10;0545276049 جهاد فيصل&#10;0539416020 ابراهيم احمد"></textarea></div>'+
+    '<button class="btn btn-gold" id="addBulk">إضافة المدعوين</button></div>'+
+
+    '<div class="panel"><h2>صورة الدعوة</h2>'+
+    '<div class="panel-sub">تظهر هذه الصورة أعلى صفحة الدعوة لكل مدعو</div>'+
+    (img?'<img src="'+img+'" style="max-width:220px;border-radius:4px;display:block;margin-bottom:12px;"/>':'')+
+    '<div class="field"><label>ارفع صورة من جهازك</label><input type="file" id="imgFile" accept="image/*"/></div>'+
+    (img?'<button class="btn btn-ghost btn-sm" id="rmImg">حذف الصورة</button>':'')+'</div>'+
+
+    '<div class="panel"><h2>بطاقات المدعوين</h2>'+
+    '<div class="panel-sub">اضغط على بطاقة المدعو لنسخ رابط دعوته أو إرسالها له على واتساب</div>'+
+    '<div id="gWrap"></div></div>';
+
+  document.getElementById("addBulk").addEventListener("click",async function(){
+    var t=document.getElementById("bulk").value;
+    if(!t.trim()){toast("اكتب المدعوين أولًا");return;}
+    try{
+      var r=await api("/api/events/"+id+"/guests",{method:"POST",body:JSON.stringify({text:t})});
+      document.getElementById("bulk").value="";
+      toast("أُضيف "+r.added+" مدعو"+(r.skipped?" · تم تجاهل "+r.skipped:""));
+      paint(id);
+    }catch(e){toast(e.message);}
+  });
+
+  var f=document.getElementById("imgFile");
+  if(f)f.addEventListener("change",function(){
+    var file=f.files[0];if(!file)return;
+    var rd=new FileReader();
+    rd.onload=function(e){
+      var im=new Image();
+      im.onload=async function(){
+        var max=900,w=im.width,h=im.height;
+        if(w>max){h=Math.round(h*max/w);w=max;}
+        var cv=document.createElement("canvas");cv.width=w;cv.height=h;
+        cv.getContext("2d").drawImage(im,0,0,w,h);
+        await api("/api/events/"+id+"/image",{method:"POST",
+          body:JSON.stringify({image:cv.toDataURL("image/jpeg",0.78)})});
+        toast("تم حفظ صورة الدعوة ✓");paint(id);
+      };
+      im.src=e.target.result;
+    };
+    rd.readAsDataURL(file);
+  });
+  var rm=document.getElementById("rmImg");
+  if(rm)rm.addEventListener("click",async function(){
+    await api("/api/events/"+id+"/image",{method:"POST",body:JSON.stringify({image:""})});paint(id);});
+
+  var wrap=document.getElementById("gWrap");
+  if(!guests.length){wrap.innerHTML='<div class="empty-state">لا يوجد مدعوون بعد</div>';return;}
+  wrap.innerHTML='<div class="guest-grid">'+guests.map(function(g){
+    return '<div class="guest-card" data-g="'+g.id+'"><div class="gname">'+esc(g.name)+'</div>'+
+      '<div class="gphone">'+esc(g.phone||"—")+'</div>'+badge(g)+'</div>';}).join("")+'</div>';
+  wrap.querySelectorAll("[data-g]").forEach(function(c){
+    c.addEventListener("click",function(){
+      var g=guests.filter(function(x){return String(x.id)===c.dataset.g;})[0];
+      openModal(id,g,ev);});});
+}
+
+function openModal(eventId,g,ev){
+  var link=inviteUrl(g.token);
+  var ov=document.createElement("div");
+  ov.className="modal-overlay";
+  ov.innerHTML='<div class="modal-box"><h3>'+esc(g.name)+'</h3>'+
+    '<div class="modal-phone">'+esc(g.phone||"بدون رقم")+'</div>'+badge(g)+
+    (g.status==="entered"?'<div class="modal-phone" style="margin-top:8px;">دخل الساعة '+fmt(g.used_at)+'</div>':'')+
+    '<div class="modal-actions">'+
+    '<button class="btn btn-gold" id="mCopy">🔗 نسخ رابط الدعوة</button>'+
+    (g.phone?'<button class="btn btn-outline" id="mWa">💬 إرسال على واتساب</button>':'')+
+    (g.rsvp==="yes"?'<button class="btn btn-outline" id="mQr">▦ عرض الباركود</button>':'')+
+    (g.status==="entered"?'<button class="btn btn-outline" id="mReset">↺ إلغاء تسجيل الدخول</button>':'')+
+    '<button class="btn btn-outline" id="mDel" style="color:var(--danger);">🗑 حذف المدعو</button>'+
+    '<button class="btn btn-outline" id="mClose">إغلاق</button></div><div id="mQrBox"></div></div>';
+  document.body.appendChild(ov);
+  ov.addEventListener("click",function(e){if(e.target===ov)ov.remove();});
+  document.getElementById("mClose").addEventListener("click",function(){ov.remove();});
+  document.getElementById("mCopy").addEventListener("click",function(){copyText(link);});
+  var wa=document.getElementById("mWa");
+  if(wa)wa.addEventListener("click",function(){
+    var msg=encodeURIComponent("تشرفنا بدعوتكم 🌿\n"+(ev?ev.name:"")+"\n"+link);
+    window.open("https://wa.me/"+waPhone(g.phone)+"?text="+msg,"_blank");});
+  var qb=document.getElementById("mQr");
+  if(qb)qb.addEventListener("click",function(){
+    var box=document.getElementById("mQrBox");
+    box.innerHTML='<div class="qr-wrap"><div id="qt"></div></div>';
+    new QRCode(document.getElementById("qt"),{text:"INV:"+g.token,width:190,height:190,
+      colorDark:"#16382C",colorLight:"#F6EFDD",correctLevel:QRCode.CorrectLevel.M});});
+  var rs=document.getElementById("mReset");
+  if(rs)rs.addEventListener("click",async function(){
+    await api("/api/guests/"+g.id+"/reset",{method:"POST"});ov.remove();paint(eventId);});
+  document.getElementById("mDel").addEventListener("click",async function(){
+    if(!confirm("حذف "+g.name+"؟"))return;
+    await api("/api/guests/"+g.id,{method:"DELETE"});ov.remove();paint(eventId);});
+}
+})();
+</script>
+</body>
+</html>

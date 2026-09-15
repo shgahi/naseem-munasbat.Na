@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>شاشة الاستقبال</title>
+<link href="https://fonts.googleapis.com/css2?family=Aref+Ruqaa:wght@400;700&family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css"/>
+</head>
+<body>
+<div class="scan-shell">
+  <h1 id="evName">شاشة الاستقبال</h1>
+  <div class="sub">وجّه الكاميرا نحو باركود الدعوة للتحقق منه</div>
+  <div class="camera-box" id="camBox">
+    <div class="camera-placeholder">اضغط "تشغيل الكاميرا" للبدء</div>
+  </div>
+  <div style="display:flex;gap:10px;margin-top:14px;">
+    <button class="btn btn-gold" id="startCam">📷 تشغيل الكاميرا</button>
+    <button class="btn btn-outline" id="stopCam" style="display:none;">إيقاف</button>
+  </div>
+  <div class="result-card" id="res"></div>
+  <button class="manual-toggle" id="mt">أو ابحث يدويًا بالاسم / الجوال</button>
+  <div class="manual-box" id="mb">
+    <input id="ms" placeholder="اكتب اسم المدعو أو رقم جواله"/>
+    <div id="mr"></div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script>
+(function(){
+"use strict";
+var key=window.location.pathname.split("/").pop();
+var stream=null,scanning=false,locked=false;
+
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];});}
+function fmt(ts){if(!ts)return"";return new Date(ts).toLocaleString("ar-SA",
+  {hour:"2-digit",minute:"2-digit",day:"2-digit",month:"2-digit"});}
+
+fetch("/api/scan/"+encodeURIComponent(key)).then(function(r){return r.json();})
+  .then(function(d){ if(d.name) document.getElementById("evName").textContent=d.name;
+    else document.getElementById("evName").textContent="رابط غير صالح"; })
+  .catch(function(){});
+
+document.getElementById("startCam").addEventListener("click",startCam);
+document.getElementById("stopCam").addEventListener("click",stopCam);
+document.getElementById("mt").addEventListener("click",function(){
+  var b=document.getElementById("mb");b.style.display=b.style.display==="block"?"none":"block";});
+document.getElementById("ms").addEventListener("input",search);
+
+async function startCam(){
+  var box=document.getElementById("camBox");
+  try{ stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}}); }
+  catch(e){
+    box.innerHTML='<div class="camera-placeholder">تعذر فتح الكاميرا.<br/>استخدم البحث اليدوي بالأسفل، أو افتح الرابط في Safari / Chrome.</div>';
+    return;
+  }
+  box.innerHTML='<video id="cv" playsinline autoplay muted></video><div class="scan-frame"></div>';
+  var v=document.getElementById("cv");v.srcObject=stream;
+  document.getElementById("startCam").style.display="none";
+  document.getElementById("stopCam").style.display="inline-flex";
+  scanning=true;
+  var cn=document.createElement("canvas"),ctx=cn.getContext("2d",{willReadFrequently:true});
+  requestAnimationFrame(function tick(){
+    if(!scanning)return;
+    if(v.readyState===v.HAVE_ENOUGH_DATA){
+      cn.width=v.videoWidth;cn.height=v.videoHeight;
+      ctx.drawImage(v,0,0,cn.width,cn.height);
+      var d=ctx.getImageData(0,0,cn.width,cn.height);
+      var code=jsQR(d.data,d.width,d.height);
+      if(code&&code.data&&!locked&&code.data.indexOf("INV:")===0){
+        locked=true;
+        checkIn(code.data.slice(4));
+        setTimeout(function(){locked=false;},3000);
+      }
+    }
+    requestAnimationFrame(tick);
+  });
+}
+
+function stopCam(){
+  scanning=false;
+  if(stream){stream.getTracks().forEach(function(t){t.stop();});stream=null;}
+  document.getElementById("camBox").innerHTML='<div class="camera-placeholder">اضغط "تشغيل الكاميرا" للبدء</div>';
+  document.getElementById("startCam").style.display="inline-flex";
+  document.getElementById("stopCam").style.display="none";
+}
+
+function checkIn(tok){
+  fetch("/api/scan/"+encodeURIComponent(key)+"/checkin",{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({token:tok})})
+  .then(function(r){return r.json();})
+  .then(show)
+  .catch(function(){ show({result:"error"}); });
+}
+
+function show(r){
+  var card=document.getElementById("res");
+  card.style.display="block";
+  if(r.result==="ok"){
+    card.className="result-card r-ok";
+    card.innerHTML='<span class="icon">✓</span><div class="title">تفضل بالدخول</div>'+
+      '<div class="name">'+esc(r.name)+'</div><div class="meta">'+esc(r.phone||"")+'</div>';
+  } else if(r.result==="used"){
+    card.className="result-card r-used";
+    card.innerHTML='<span class="icon">⚠</span><div class="title">الباركود مستخدم مسبقًا</div>'+
+      '<div class="name">'+esc(r.name)+'</div><div class="meta">دخل الساعة '+fmt(r.usedAt)+'</div>';
+  } else if(r.result==="not_confirmed"){
+    card.className="result-card r-bad";
+    card.innerHTML='<span class="icon">✕</span><div class="title">لم يؤكد الحضور</div>'+
+      '<div class="name">'+esc(r.name)+'</div><div class="meta">هذا المدعو لم يوافق على الدعوة</div>';
+  } else if(r.result==="wrong_event"){
+    card.className="result-card r-bad";
+    card.innerHTML='<span class="icon">✕</span><div class="title">باركود لحفل آخر</div>'+
+      '<div class="meta">هذه الدعوة لا تخص هذه المناسبة</div>';
+  } else if(r.result==="invalid"){
+    card.className="result-card r-bad";
+    card.innerHTML='<span class="icon">✕</span><div class="title">باركود غير صالح</div>'+
+      '<div class="meta">غير مسجل في قائمة المدعوين</div>';
+  } else {
+    card.className="result-card r-bad";
+    card.innerHTML='<span class="icon">✕</span><div class="title">تعذر الاتصال</div>'+
+      '<div class="meta">تحقق من الإنترنت وحاول مجددًا</div>';
+  }
+}
+
+function search(e){
+  var q=(e.target.value||"").trim();
+  var box=document.getElementById("mr");
+  if(!q){box.innerHTML="";return;}
+  fetch("/api/scan/"+encodeURIComponent(key)+"/search?q="+encodeURIComponent(q))
+   .then(function(r){return r.json();})
+   .then(function(list){
+     if(!list.length){box.innerHTML='<div style="font-size:13px;color:var(--muted);">لا توجد نتائج</div>';return;}
+     box.innerHTML=list.map(function(g){
+       var done=g.status==="entered";
+       var label=done?"مُستخدم":(g.rsvp!=="yes"?"لم يؤكد":"تأكيد الدخول");
+       return '<div class="m-item"><span>'+esc(g.name)+(done?" — دخل":"")+'</span>'+
+         '<button class="btn btn-sm '+(done||g.rsvp!=="yes"?"btn-outline":"btn-gold")+'" data-t="'+esc(g.token)+'" '+
+         (done?"disabled":"")+'>'+label+'</button></div>';}).join("");
+     box.querySelectorAll("[data-t]").forEach(function(b){
+       b.addEventListener("click",function(){
+         checkIn(b.dataset.t);
+         setTimeout(function(){search({target:document.getElementById("ms")});},400);});});
+   });
+}
+})();
+</script>
+</body>
+</html>

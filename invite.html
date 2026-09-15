@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>دعوة حضور</title>
+<link href="https://fonts.googleapis.com/css2?family=Aref+Ruqaa:wght@400;700&family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css"/>
+</head>
+<body>
+<div class="invite-shell"><div class="invite-card"><div class="invite-inner" id="ic">
+  <div class="loader">جارِ التحميل…</div>
+</div></div></div>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script>
+(function(){
+"use strict";
+var c=document.getElementById("ic");
+var token=window.location.pathname.split("/").pop();
+var img="", data=null;
+
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(x){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[x];});}
+
+fetch("/api/invite/"+encodeURIComponent(token))
+  .then(function(r){ if(!r.ok) throw new Error("notfound"); return r.json(); })
+  .then(function(d){
+    data=d;
+    return fetch("/api/events/"+d.event_id+"/image").then(function(r){return r.json();})
+      .then(function(i){ img=i.image||""; }).catch(function(){});
+  })
+  .then(draw)
+  .catch(function(){
+    c.innerHTML='<div class="invite-eyebrow">دعوة غير موجودة</div>'+
+      '<h2 class="invite-title" style="font-size:21px;">تعذر العثور على هذه الدعوة</h2>'+
+      '<div class="invite-note">تأكد من الرابط أو تواصل مع الجهة المُرسِلة.</div>';
+  });
+
+function head(){
+  var d=data;
+  return (img?'<img class="invite-img" src="'+img+'" alt=""/>':'')+
+    '<div class="invite-eyebrow">دعوة حضور</div>'+
+    '<h2 class="invite-title">'+esc(d.event_name)+'</h2>'+
+    '<div class="invite-guest">يسعدنا دعوة / <b>'+esc(d.name)+'</b></div>'+
+    ((d.date_text||d.location)?
+      '<div class="invite-details">'+
+      (d.date_text?'<div>🗓 '+esc(d.date_text)+'</div>':'')+
+      (d.location?'<div>📍 '+(d.map_link?'<a href="'+esc(d.map_link)+'" target="_blank" rel="noopener">'+esc(d.location)+'</a>':esc(d.location))+'</div>':'')+
+      '</div>':'<div style="height:16px;"></div>');
+}
+
+function draw(){
+  var d=data;
+  if(d.rsvp==="pending"){
+    c.innerHTML=head()+'<div class="invite-note">نرجو تأكيد حضوركم</div>'+
+      '<div class="rsvp-row"><button class="btn btn-gold" id="yes">موافق على الحضور</button>'+
+      '<button class="btn btn-outline" id="no">غير موافق</button></div>';
+    document.getElementById("yes").addEventListener("click",function(){respond("yes",this);});
+    document.getElementById("no").addEventListener("click",function(){respond("no",this);});
+  } else if(d.rsvp==="no"){
+    c.innerHTML=head()+'<div class="flag flag-no">تم تسجيل اعتذاركم عن الحضور</div>'+
+      '<div class="invite-note">إذا تغيّرت خططكم، تواصلوا مع صاحب الدعوة.</div>';
+  } else {
+    c.innerHTML=head()+
+      (d.status==="entered"
+        ? '<div class="flag flag-used">✓ تم الدخول بهذا الباركود — انتهت صلاحيته</div>'
+        : '<div class="qr-wrap"><div id="gq"></div></div>'+
+          '<div class="invite-note">أظهروا هذا الباركود عند باب الحفل<br/>صالح للمسح مرة واحدة فقط</div>');
+    if(d.status!=="entered"){
+      new QRCode(document.getElementById("gq"),{text:"INV:"+d.token,width:205,height:205,
+        colorDark:"#16382C",colorLight:"#F6EFDD",correctLevel:QRCode.CorrectLevel.M});
+    }
+  }
+}
+
+function respond(answer,btn){
+  btn.disabled=true;
+  fetch("/api/invite/"+encodeURIComponent(token)+"/rsvp",{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({answer:answer})})
+   .then(function(r){return r.json();})
+   .then(function(r){ if(r.error) throw new Error(r.error);
+     data.rsvp=r.rsvp; data.status=r.status; draw(); })
+   .catch(function(){ btn.disabled=false; alert("تعذر تسجيل الرد، حاول مرة أخرى"); });
+}
+})();
+</script>
+</body>
+</html>
