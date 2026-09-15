@@ -10,7 +10,7 @@
 <body>
 <div id="app"><div class="loader">جارِ التحميل…</div></div>
 <div id="toast" class="toast"></div>
-<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 (function(){
 "use strict";
@@ -51,7 +51,20 @@ async function api(url,opts){
 }
 
 /* ---------- boot ---------- */
-api("/api/me").then(function(d){ d.authenticated?renderEvents():gate(); }).catch(gate);
+if(window.location.protocol==="file:"){
+  app.innerHTML='<div class="stage"><div class="gate-card">'+
+    '<div class="ornament">۰ ۰ ۰</div><h1>شغّل الخادم أولًا</h1>'+
+    '<div class="gate-sub" style="line-height:2.1;margin-bottom:0;">'+
+    'هذا النظام يعمل عبر خادم، ولا يشتغل بفتح الملف مباشرة من المجلد.<br/><br/>'+
+    'انشر المشروع على Render وافتح الرابط الذي يعطيك إياه، '+
+    'أو شغّله على جهازك بالأمرين:<br/><br/>'+
+    '<code style="color:var(--goldL);">npm install</code><br/>'+
+    '<code style="color:var(--goldL);">npm start</code><br/><br/>'+
+    'ثم افتح <code style="color:var(--goldL);">http://localhost:3000</code>'+
+    '</div></div></div>';
+} else {
+  api("/api/me").then(function(d){ d.authenticated?renderEvents():gate(); }).catch(gate);
+}
 
 function gate(){
   app.innerHTML='<div class="stage"><div class="gate-card">'+
@@ -141,7 +154,7 @@ async function renderEvent(id){
 async function paint(id){
   var data=await api("/api/events/"+id);
   var ev=data.event, guests=data.guests;
-  var img=data.event.has_image ? (await api("/api/events/"+id+"/image")).image : "";
+  var img=data.event.has_image ? (await api("/api/public/events/"+id+"/image")).image : "";
   var yes=guests.filter(function(g){return g.rsvp==="yes";}).length;
   var no=guests.filter(function(g){return g.rsvp==="no";}).length;
   var inn=guests.filter(function(g){return g.status==="entered";}).length;
@@ -206,8 +219,11 @@ async function paint(id){
   var wrap=document.getElementById("gWrap");
   if(!guests.length){wrap.innerHTML='<div class="empty-state">لا يوجد مدعوون بعد</div>';return;}
   wrap.innerHTML='<div class="guest-grid">'+guests.map(function(g){
-    return '<div class="guest-card" data-g="'+g.id+'"><div class="gname">'+esc(g.name)+'</div>'+
-      '<div class="gphone">'+esc(g.phone||"—")+'</div>'+badge(g)+'</div>';}).join("")+'</div>';
+    var initial=(g.name||"?").trim().charAt(0);
+    return '<div class="guest-card" data-g="'+g.id+'">'+
+      '<div class="avatar">'+esc(initial)+'</div>'+
+      '<div class="guest-body"><div class="gname">'+esc(g.name)+'</div>'+
+      '<div class="gphone">'+esc(g.phone||"—")+'</div>'+badge(g)+'</div></div>';}).join("")+'</div>';
   wrap.querySelectorAll("[data-g]").forEach(function(c){
     c.addEventListener("click",function(){
       var g=guests.filter(function(x){return String(x.id)===c.dataset.g;})[0];
