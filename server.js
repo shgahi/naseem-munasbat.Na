@@ -27,7 +27,9 @@ const pool = process.env.DATABASE_URL
 
 app.use(express.json({ limit: "6mb" }));
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname, "public")));
+app.get("/style.css", (req, res) =>
+  res.sendFile(path.join(__dirname, "style.css"))
+);
 
 /* wraps async handlers so an error never leaves the request hanging */
 const ah = (fn) => (req, res, next) =>
@@ -415,13 +417,13 @@ app.get(
 
 /* ---------------- pages ---------------- */
 app.get("/i/:token", (req, res) =>
-  res.sendFile(path.join(__dirname, "public", "invite.html"))
+  res.sendFile(path.join(__dirname, "invite.html"))
 );
 app.get("/s/:key", (req, res) =>
-  res.sendFile(path.join(__dirname, "public", "scan.html"))
+  res.sendFile(path.join(__dirname, "scan.html"))
 );
 app.get("/", (req, res) =>
-  res.sendFile(path.join(__dirname, "public", "admin.html"))
+  res.sendFile(path.join(__dirname, "admin.html"))
 );
 
 /* ---------------- errors ---------------- */
